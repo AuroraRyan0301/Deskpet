@@ -1,0 +1,20 @@
+node_modules/
+.DS_Store
+
+# Local secrets: endpoint + API key live here, never in the repo.
+config.local.json
+
+# Build artifact — rebuilt by native/build.sh.
+native/voiced
+
+# Character sprite packs are fan-made assets of Cygames characters (upstream repo has no
+# license), so they are not redistributed here. Recreate with:
+#   node tools/import-gremlin.mjs <path-to-Desktop_Gremlin> <pack-name>
+characters/
+
+# Regenerable test screenshots.
+test/*.png
+test/gallery/
+
+# Course paper — not part of the reproducible system.
+paper/

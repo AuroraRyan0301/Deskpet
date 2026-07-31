@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desk Pet — two-loop companion</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #fff; --ink: #22201d; --muted: #7b756c;
+    --line: #e2ded6; --accent: #b4633f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1917; --panel: #232120; --ink: #eae7e1; --muted: #9a938a;
+            --line: #35322f; --accent: #d98b62; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.55 system-ui, -apple-system, "Hiragino Sans", sans-serif;
+         background: var(--bg); color: var(--ink); }
+  header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex;
+           gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: 12.5px; }
+  /* The floating pet sits over the bottom-right corner, so leave it room. */
+  main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 16px;
+         padding: 16px 16px 340px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .card + .card { margin-top: 16px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+             color: var(--muted); margin: 0 0 10px; font-weight: 650; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  label { color: var(--muted); font-size: 12.5px; }
+  button { font: inherit; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--ink); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  select, input[type=text], input[type=password], input[type=number] { font: inherit; padding: 6px 8px;
+    border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  input[type=range] { accent-color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td { padding: 3px 0; }
+  td:first-child { color: var(--muted); width: 46%; }
+  td:last-child { text-align: right; font-weight: 600; }
+  .bad { color: #c0392b; } .ok { color: #2c8a5b; }
+  #status { font-size: 12.5px; color: var(--muted); min-height: 1.5em; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  code { background: var(--bg); padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+
+  /* The pet floats over everything in both modes; only the surrounding UI differs. */
+  /* The whole viewport is the stage, so swipes can send her anywhere on the page. The
+     layer ignores the pointer; only its widgets (cam, buttons) opt back in. */
+  #petLayer { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+  #petBtns, #cam { pointer-events: auto; }
+  #stage { position: absolute; inset: 0; }
+  #pet { width: 100%; height: 100%; display: block; }
+  #cam { position: absolute; right: 6px; bottom: 6px; width: 288px; border-radius: 8px;
+         transform: scaleX(-1); border: 1px solid var(--line); background: #000; }
+  #cam.hidden { display: none; }
+  #petBtns { position: absolute; top: 4px; right: 6px; display: flex; gap: 4px; opacity: 0;
+             transition: opacity .15s; }
+  #petLayer:hover #petBtns { opacity: 1; }
+  #petBtns button { padding: 2px 7px; font-size: 12px; border-radius: 6px;
+                    background: rgba(255,255,255,.85); color: #333; border-color: rgba(0,0,0,.12); }
+
+  /* Electron: the window itself is the pet. Transparent background, no page chrome,
+     and the canvas is a drag region so the pet can be moved around the desktop. */
+  body.electron { background: transparent; overflow: hidden; }
+  body.electron #ui { display: none; }
+  body.electron #pet { -webkit-app-region: drag; }
+  body.electron #petBtns button { -webkit-app-region: no-drag; }
+  body.electron.panel-open { background: var(--bg); }
+  body.electron.panel-open #ui { display: block; height: 100vh; overflow: auto; padding-right: 300px; }
+  body.electron.panel-open #pet { -webkit-app-region: no-drag; }
+  body.electron.panel-open main { grid-template-columns: 1fr; }
+  .only-electron { display: none; }
+  body.electron .only-electron { display: inline-flex; }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <header>
+    <h1>Desk Pet</h1>
+    <span class="sub">Two loops: a 30 fps landmark loop, and an event-triggered loop that adds meaning, speech and motion</span>
+  </header>
+
+  <main>
+    <section>
+      <div class="card">
+        <h2>Input</h2>
+        <div class="row">
+          <button id="btnCam" class="primary">Start camera</button>
+          <button id="btnMock">Run mock script</button>
+        </div>
+        <div class="row">
+          <label for="videoFile">or load a video file</label>
+          <input type="file" id="videoFile" accept="video/*">
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="showCam"> Show camera</label>
+          <button id="btnRecal">Recalibrate</button>
+        </div>
+        <div id="status">Not started.</div>
+      </div>
+
+      <div class="card">
+        <h2>Character</h2>
+        <div class="row">
+          <select id="charSelect" style="flex:1"></select>
+          <button id="btnCharNext">Next</button>
+        </div>
+        <div class="row">
+          <label><span id="v_vocab">—</span> actions available</label>
+          <select id="actionTry"></select>
+          <button id="btnActionTry">Play it</button>
+        </div>
+        <div class="hint">
+          The three built-in characters are drawn procedurally and ship no third-party art.
+          Drop a sprite-sheet pack in <code>characters/</code>, list it in
+          <code>characters/index.json</code>, and it appears in this menu. Any action you add to a
+          pack joins the vocabulary handed to the model on its own — no code change needed.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Output</h2>
+        <div class="row">
+          <label><input type="checkbox" id="speakOn" checked> Speak (speech synthesis)</label>
+          <label><input type="checkbox" id="markFrame" checked> Draw landmarks on the frame</label>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="voiceOn"> Listen (voice input)</label>
+          <button id="btnSpeakTest">Test voice</button>
+        </div>
+        <div class="row">
+          <button id="btnCsv">Export state CSV</button>
+          <button id="btnActionsCsv">Export feedback CSV</button>
+        </div>
+        <div class="row only-electron">
+          <button id="btnQuit">Quit pet</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="card">
+        <h2>Experiment variables</h2>
+        <div class="row">
+          <label for="policy">Feedback style</label>
+          <select id="policy">
+            <option value="honest">honest — say what it sees</option>
+            <option value="flatter">flatter — praise no matter what</option>
+            <option value="ignore">ignore — body only, no speech</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="slumpSens">Posture sensitivity <output id="slumpOut">0.28</output></label>
+          <input type="range" id="slumpSens" min="0.10" max="0.70" step="0.02" value="0.28" style="flex:1">
+        </div>
+        <div class="hint">
+          Lower means fussier. At 0.28 your face has to drop 5.6% of the frame height and stay
+          there for 1.6 s before it counts as slouching. The exit threshold is half that, so the
+          reading cannot flap on the boundary.
+        </div>
+        <div class="row">
+          <label for="delay">Reaction delay <output id="delayOut">40</output> ms</label>
+          <input type="range" id="delay" min="0" max="600" step="10" value="40" style="flex:1">
+        </div>
+        <div class="hint">
+          Lower is not automatically better. The 04/30 lecture puts the visuo-tactile
+          simultaneity window at ≈60 ms, with perceived conflict peaking at 30–120 ms of delay.
+          This slider is the axis an evaluation would sweep.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Fast loop</h2>
+        <table>
+          <tr><td>sprite</td><td id="v_sprite">—</td></tr>
+          <tr><td>action</td><td id="v_action">—</td></tr>
+          <tr><td>calibration</td><td id="v_calib">—</td></tr>
+          <tr><td>slouch</td><td id="v_slump">—</td></tr>
+          <tr><td>lean ratio</td><td id="v_lean">—</td></tr>
+          <tr><td>looking at screen</td><td id="v_att">—</td></tr>
+          <tr><td>blinks / min</td><td id="v_blink">—</td></tr>
+          <tr><td>yawns</td><td id="v_yawn">—</td></tr>
+          <tr><td>gesture (model)</td><td id="v_gest">—</td></tr>
+        <tr><td>hand shape (geometry)</td><td id="v_shape">—</td></tr>
+        <tr><td>expression</td><td id="v_expr">—</td></tr>
+          <tr><td>energy</td><td id="v_energy">—</td></tr>
+          <tr><td>mood</td><td id="v_mood">—</td></tr>
+          <tr><td>focus streak (s)</td><td id="v_focus">—</td></tr>
+          <tr><td>last channel</td><td id="v_chan">—</td></tr>
+          <tr><td>mic level</td><td id="v_level">—</td></tr>
+          <tr><td>inference (ms)</td><td id="v_infer">—</td></tr>
+          <tr><td>fps</td><td id="v_fps">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Slow loop (words + motion)</h2>
+        <div id="v_sem" style="min-height:3em">Idle. The fast loop runs on its own; the slow loop only adds meaning.</div>
+        <div id="v_voice" style="min-height:1.5em;opacity:.8">Voice input off.</div>
+        <div class="row"><label>Calls left today</label><span id="v_quota">—</span></div>
+        <details>
+          <summary>Connect a vision model</summary>
+          <div class="row">
+            <button id="btnPreset">Fill in GPT_API_free</button>
+            <button id="btnPresetSub2api">Fill in local sub2api</button>
+            <label>Daily cap</label>
+            <input type="number" id="quotaLimit" value="100" min="1" max="9999999" style="width:88px">
+          </div>
+          <div class="row"><label style="width:76px">Protocol</label>
+            <select id="vlmProvider" style="flex:1">
+              <option value="openai">openai — /v1/chat/completions (JSON requested in the prompt)</option>
+              <option value="anthropic">anthropic — /v1/messages (schema-enforced JSON, action as an enum)</option>
+            </select></div>
+          <div class="row"><label style="width:76px">endpoint</label>
+            <input type="text" id="vlmUrl" style="flex:1" placeholder="http://localhost:8000/v1/chat/completions"></div>
+          <div class="row"><label style="width:76px">model</label>
+            <input type="text" id="vlmModel" style="flex:1" placeholder="e.g. claude-haiku-4-5-20251001 / gpt-4o-mini"></div>
+          <div class="row"><label style="width:76px">api key</label>
+            <input type="password" id="vlmKey" style="flex:1" placeholder="leave blank for a local service"></div>
+          <div class="row"><button id="btnVlmTest">Test once</button></div>
+          <div class="hint">
+            Settings live in localStorage. <strong>With the slow loop on, camera frames leave this
+            machine</strong> — they go to whatever endpoint you enter. Point it at a third-party
+            relay and the fast loop's "nothing leaves the device" no longer holds. Point it at a
+            local vLLM / llama.cpp / LM Studio / Ollama endpoint and everything stays local.
+            A free GPT_API_free tier is 100 calls a day, which one call every 4 s burns through in
+            seven minutes — which is why the quota guard is mandatory, not optional.
+          </div>
+        </details>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="petLayer">
+  <div id="stage">
+    <canvas id="pet"></canvas>
+    <video id="cam" playsinline muted autoplay class="hidden"></video>
+    <div id="petBtns">
+      <button id="btnPanel" title="Control panel">⚙</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { PetCore, featuresFromMediapipe, makeFeatures } from './pet-core.js';
+import { PetRenderer } from './pet-render.js';
+import { ActionPlayer, BUILTIN_PACKS, actionVocabulary, normalizePack } from './characters.js';
+import { Brain } from './brain.js';
+import { Voice } from './speech.js';
+import { ExpressionDetector, blendshapeLookup, readHands, WaveDetector, SwipeDetector } from './perception.js';
+import { Locomotion } from './pointing.js';
+import { annotateFrame } from './annotate.js';
+import { VoiceBridge } from './voice-bridge.js';
+import { IntentBus, GRAMMAR } from './intents.js';
+import { ScriptRunner } from './script.js';
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status');
+const setStatus = (s) => { statusEl.textContent = s; };
+
+const shell = window.petShell ?? null;
+
+// ---- voice input ----
+// The sidecar is a child process, so it only exists under Electron. In a plain browser the
+// alternative would be the Web Speech API, which ships audio to a vendor's servers — the
+// opposite of the fast loop's whole point — so the web build simply has no voice input and
+// says so rather than quietly becoming less private.
+const bridge = new VoiceBridge();
+const bus = new IntentBus();
+let voiceOn = false;
+let pendingHeard = null;
+// The question that triggered the current turn, kept so a snap re-ask carries it, and the
+// per-turn budget that stops snap chains.
+let lastQuestion = null;
+let snapBudget = 0;
+
+// ---- user-driven movement (swipe joystick) ----
+// This is the user driving the puppet, not the puppet acting on its own — so it lives on
+// the reflex path (intent bus, free tier) and never waits on the model. One swipe = one
+// step of a quarter screen, clamped so she cannot be shooed out of view.
+const loco = new Locomotion();
+const petPos = { x: 0.82, y: 0.75 };
+let petGoal = null;
+const MOVE_STEP = 0.24;
+function nudgePet(dir) {
+  const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
+  if (!d) return;
+  const from = petGoal ?? petPos;
+  petGoal = {
+    x: Math.min(0.92, Math.max(0.08, from.x + d[0] * MOVE_STEP)),
+    y: Math.min(0.85, Math.max(0.12, from.y + d[1] * MOVE_STEP)),
+  };
+}
+if (shell?.isElectron) document.body.classList.add('electron');
+
+const core = new PetCore({ policy: 'honest', reactionDelayMs: 40 });
+const renderer = new PetRenderer($('pet'));
+const player = new ActionPlayer(BUILTIN_PACKS[0]);
+const voice = new Voice();
+const expressions = new ExpressionDetector();
+const waves = new WaveDetector();
+const swipes = new SwipeDetector();
+// Filled in by grabJpeg so the prompt can state, in words, what the image is marked with.
+let lastMarks = [];
+let lastFrameHands = [];
+let lastFrameFace = null;
+let faceConnections = null;
+const brain = new Brain({
+  // localStorage is the natural place for the daily counter: it must survive a reload,
+  // or the quota resets every time the page is refreshed and the guard is worthless.
+  store: { get: (k) => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v) },
+});
+
+let packs = [...BUILTIN_PACKS];
+let faceLandmarker = null;
+let gestureRecognizer = null;
+let running = false;
+let mockTimer = null;
+let lastInferMs = 0;
+let fps = 0;
+let fpsLast = performance.now();
+let fpsCount = 0;
+let source = null;          // the <video> the fast loop is currently reading
+let lastTrigger = null;
+let lastSpoken = '';
+let lastSpokenAt = 0;
+const feedbackLog = [];     // t, source, action, line — the pet's own output over time
+
+// ---- characters -------------------------------------------------------------
+function refreshCharUI() {
+  const sel = $('charSelect');
+  sel.innerHTML = '';
+  for (const p of packs) {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = `${p.name} (${p.renderer === 'sheet' ? 'sprites' : 'procedural'})`;
+    sel.append(o);
+  }
+  sel.value = player.pack.id;
+
+  const vocab = actionVocabulary(player.pack);
+  $('v_vocab').textContent = vocab.length;
+  const tryEl = $('actionTry');
+  tryEl.innerHTML = '';
+  for (const a of vocab) {
+    const o = document.createElement('option');
+    o.value = a.name;
+    o.textContent = a.name;
+    tryEl.append(o);
+  }
+}
+
+function setCharacter(id, { remember = false } = {}) {
+  const pack = packs.find((p) => p.id === id);
+  if (!pack) return;
+  if (remember) localStorage.setItem('deskpet.character', id);
+  player.setPack(pack);
+  player.setState(core.state.sprite ?? 'idle');
+  refreshCharUI();
+  setStatus(`Switched to ${player.pack.name}.`);
+}
+
+// Sheet packs live on disk and are opt-in, so a missing index.json is normal.
+async function loadExternalPacks() {
+  try {
+    const res = await fetch('./characters/index.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const list = await res.json();
+    const loaded = [];
+    for (const entry of Array.isArray(list) ? list : (list.packs ?? [])) {
+      // Three accepted shapes: a bare path, {url}, or the {id, name, dir} rows that
+      // tools/import-gremlin.mjs writes.
+      const url = typeof entry === 'string'
+        ? entry
+        : (entry.url ?? (entry.dir ? `${entry.dir}/character.json` : null));
+      if (!url) continue;
+      try {
+        const r = await fetch(new URL(url, `${location.origin}/characters/`), { cache: 'no-store' });
+        if (!r.ok) continue;
+        const raw = await r.json();
+        // Resolve sheet paths relative to the manifest so a pack folder is portable.
+        const base = new URL(url, `${location.origin}/characters/`);
+        for (const group of ['states', 'actions']) {
+          for (const def of Object.values(raw[group] ?? {})) {
+            if (def?.sheet) def.sheet = new URL(def.sheet, base).href;
+          }
+        }
+        loaded.push(normalizePack(raw));
+      } catch (e) {
+        console.warn(`Character pack ${url} failed to load: ${e.message}`);
+      }
+    }
+    if (loaded.length > 0) {
+      packs = [...BUILTIN_PACKS, ...loaded];
+      refreshCharUI();
+      setStatus(`Loaded ${loaded.length} external character pack(s).`);
+      // Agnes Tachyon is the house default; an explicit choice (stored) still wins.
+      const stored = localStorage.getItem('deskpet.character');
+      const pick = stored && packs.some((x) => x.id === stored) ? stored
+        : (packs.some((x) => x.id === 'tachyon') ? 'tachyon' : null);
+      if (pick && player.pack.id !== pick) setCharacter(pick);
+    }
+  } catch { /* no external packs installed */ }
+}
+
+// ---- the pet's own output: one owner --------------------------------------------------
+// Everything the puppet does — words, one-shot animations, lasting mood — arrives as a
+// verb script from the model and is played here. The fast loop no longer touches the
+// puppet at all: detections go OUT (to the OS reflex tier and to the trigger gate that
+// wakes the model) and scripts come BACK. Removing the second author is what removed the
+// twitching that used to need an action-floor workaround.
+const runner = new ScriptRunner({
+  say: (text) => {
+    const now = performance.now();
+    // The same line can arrive again from a retried script; dedupe briefly.
+    if (text === lastSpoken && now - lastSpokenAt < 8000) return;
+    lastSpoken = text;
+    lastSpokenAt = now;
+    renderer.setLine(text, now);
+    if ($('speakOn').checked && core.opt.policy !== 'ignore') {
+      const v = player.pack.voice;
+      voice.say(text, { lang: v.lang, voiceHint: v.voiceHint, rate: v.rate, pitch: v.pitch });
+    }
+    feedbackLog.push({ t: Math.round(now), from: 'script', action: '', line: text });
+  },
+  emote: (name) => {
+    const now = performance.now();
+    const resolved = player.resolve(name);
+    if (resolved && player.playAction(resolved, now, { queueIfBusy: true })) {
+      feedbackLog.push({ t: Math.round(now), from: 'script', action: resolved, line: '' });
+    }
+  },
+  mood: (state) => {
+    core.setMood(state);
+    feedbackLog.push({ t: Math.round(performance.now()), from: 'script', action: `mood:${state}`, line: '' });
+  },
+  look: () => { /* gaze already tracks the user; a look target needs the overlay first */ },
+  snap: () => {
+    // The model asked to look. One snap per conversational turn: the reply to a snap may
+    // not snap again, or an unsure model could ping-pong the camera forever.
+    if (snapBudget <= 0) { showVoice('(snap ignored — already looked this turn)'); return; }
+    if (!source) { showVoice('(snap ignored — no camera running)'); return; }
+    snapBudget -= 1;
+    pendingHeard = lastQuestion;
+    showVoice('taking a look…');
+    askModel('snap', { ...core.state });
+  },
+  move: ({ gait }) => {
+    // Until the full-screen overlay exists there is no screen to cross, so a move goal
+    // degrades to the pack's own walk/run clip. The goal itself is honoured later.
+    const now = performance.now();
+    const resolved = player.resolve(gait === 'run' ? 'spin' : 'walkRight') ?? player.resolve('walkRight');
+    if (resolved) player.playAction(resolved, now, { queueIfBusy: true });
+  },
+});
+
+function playScript(out, from, now) {
+  if (!out) return;
+  if (out.rejected?.length) {
+    console.warn('script steps rejected:', out.rejected);
+  }
+  if (out.steps.length > 0) runner.start(out.steps, now);
+  const preview = out.line || (out.steps.length ? out.script : '(silent)');
+  $('v_sem').textContent = `[${from}] ${preview}`;
+}
+
+// ---- voice: sidecar lines in, intents and conversation out ----
+
+let lastVoiceMsg = '';
+function showVoice(text) {
+  // Deduplicated because the sustain loop runs at frame rate: writing the same reason 30
+  // times a second is noise, and it used to clobber newer messages such as an error line.
+  if (text === lastVoiceMsg) return;
+  lastVoiceMsg = text;
+  const el = $('v_voice');
+  if (el) el.textContent = text;
+}
+
+// What a fired intent actually does. OS-affecting intents deliberately have no
+// implementation yet: the Accessibility layer is the last thing to be built (DESIGN.md,
+// "Build order"), and until it exists an intent that reaches here is reported rather than
+// silently swallowed, so it is obvious the recogniser worked and the actuator is missing.
+function handleIntent(event, now) {
+  const { intent } = event;
+  const tag = event.confirmed ? `${intent} (two channels)` : intent;
+  switch (intent) {
+    case 'move_up':
+    case 'move_down':
+    case 'move_left':
+    case 'move_right':
+      nudgePet(intent.slice(5));
+      showVoice(`${tag} → moving ${intent.slice(5)}`);
+      break;
+    case 'come_here':
+      // The puppet belongs to the model, so a summons goes there — the reply script
+      // decides how it comes over. OS intents keep the fast path; this is social.
+      showVoice(`${tag} → asking the pet over`);
+      pendingHeard = bridge.transcriptText() || 'come over here';
+      if (brain.configured) askModel('said', { ...core.state });
+      break;
+    case 'cancel':
+      voice.stop?.();
+      showVoice(`${tag} → stopping`);
+      break;
+    case 'scroll_up':
+    case 'scroll_down':
+    case 'click':
+    case 'close_window':
+    case 'key_combo':
+      showVoice(`${tag} → recognised, but OS control is not built yet`);
+      break;
+    default:
+      showVoice(`${tag} → nothing bound`);
+  }
+  feedbackLog.push({
+    t: Math.round(now), from: 'intent', action: intent,
+    line: event.confirmed ? 'confirmed by two channels' : '',
+  });
+}
+
+function onVoiceLine(line) {
+  const now = performance.now();
+  const out = bridge.onLine(line, now);
+
+  // Subtitle first, and independent of routing: it reports what was heard, not what the pet
+  // decided to do about it. Driving it from partials is the reason it feels live — a caption
+  // that waited for finals would lag speech by 0.4-3.4 s and look broken.
+  if (line?.type === 'partial' || line?.type === 'final') {
+    renderer.setCaption(line.text, now, { final: line.type === 'final' });
+  }
+
+  switch (out.kind) {
+    case 'ready':
+      showVoice('listening');
+      // Bias recognition toward the command phrases and the character's name. Re-sent here
+      // rather than once at launch because the sidecar may have restarted.
+      sendVoiceContext();
+      break;
+    case 'error':
+      // Also drops any command still being sustained: evidence from before the failure must
+      // not keep voting once the recogniser has stopped listening.
+      bridge.settled(bridge.status().live);
+      showVoice(`voice: ${out.error.message}`);
+      voiceOn = bridge.status().running;
+      if ($('voiceOn')) $('voiceOn').checked = voiceOn;
+      break;
+    case 'stopped':
+      showVoice('voice off');
+      break;
+    case 'command': {
+      // First submission almost never fires on its own — the tier wants dwell — so the
+      // frame loop keeps voting. Submitting here too means a free-tier command answers on
+      // the very first partial, which is the ~40 ms path the design is built around.
+      const verdict = bus.submit(out.submit);
+      showVoice(`heard "${out.phrase}"`);
+      if (verdict.status === 'fired') {
+        bridge.settled(out.submit.intent);
+        handleIntent(verdict.event, now);
+      }
+      break;
+    }
+    case 'conversation':
+      // Echo guard. Browser echo cancellation targets tab audio, but speechSynthesis is
+      // system audio and can leak back in — and a pet that hears its own line answers
+      // itself forever. Anything heard while TTS is speaking, or that repeats the last
+      // spoken line, is treated as our own voice coming back.
+      if (window.speechSynthesis?.speaking) { showVoice('(hearing myself — ignored)'); break; }
+      if (out.text && lastSpoken && now - lastSpokenAt < 10000) {
+        const norm = (x) => x.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+        const a = norm(out.text);
+        const b = norm(lastSpoken);
+        if (a && b && (a.includes(b) || b.includes(a))) { showVoice('(echo — ignored)'); break; }
+      }
+      if (out.speak) {
+        // A final that is not a command is something said *to* the pet. The slow loop
+        // answers it, because answering is a 1-3 s activity and always was.
+        pendingHeard = bridge.transcriptText();
+        lastQuestion = pendingHeard;
+        snapBudget = 1;
+        showVoice(`heard: ${out.speak.text}`);
+        if (brain.configured) {
+          // The person spoke; an idle poll about their posture can die for that.
+          brain.abortInflight();
+          askModel('said', { ...core.state });
+        }
+      } else {
+        showVoice(`… ${out.text}`);
+      }
+      break;
+    case 'level': {
+      const el = $('v_level');
+      if (el) el.textContent = out.level.peak.toFixed(3);
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+shell?.onVoice?.(onVoiceLine);
+
+// Two transports, one line protocol. Under Electron the sidecar is a child of the main
+// process and lines arrive over IPC. In a browser the page cannot spawn anything, so the
+// local dev server owns the sidecar and streams the same lines over Server-Sent Events —
+// which also means the browser never touches the microphone and so never prompts for it.
+let voiceEvents = null;
+
+function sendVoiceContext() {
+  const strings = VoiceBridge.contextStrings(GRAMMAR, [player.pack.name]);
+  if (shell?.voiceContext) { shell.voiceContext(strings); return; }
+  fetch('/_voice/context', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ strings }),
+  }).catch(() => { /* context is an optimisation; losing it is not an error */ });
+}
+
+let micStream = null;
+let micCtx = null;
+
+// getUserMedia audio -> 16 kHz int16 chunks -> POST /_voice/audio. A ScriptProcessor is
+// deprecated but universally supported and needs no worklet file; at 4096 frames per
+// callback this posts ~4 chunks a second, which the local server forwards untouched.
+function startMicPump() {
+  micCtx = new AudioContext({ sampleRate: 16000 });
+  // Autostarted before any user gesture, Chrome parks the context in 'suspended' and the
+  // pump never fires. Resume on the first gesture and say so, instead of listening to
+  // nothing while claiming to listen.
+  if (micCtx.state === 'suspended') {
+    micCtx.resume().catch(() => {});
+    if (micCtx.state === 'suspended') {
+      showVoice('mic ready — click anywhere once to activate');
+      const kick = () => { micCtx?.resume().catch(() => {}); showVoice('listening'); };
+      window.addEventListener('pointerdown', kick, { once: true });
+      window.addEventListener('keydown', kick, { once: true });
+    }
+  }
+  const src = micCtx.createMediaStreamSource(micStream);
+  const node = micCtx.createScriptProcessor(4096, 1, 1);
+  src.connect(node);
+  node.connect(micCtx.destination);
+  node.onaudioprocess = (e) => {
+    const f = e.inputBuffer.getChannelData(0);
+    // Local level display, independent of the sidecar — "is it recording at all" must be
+    // answerable from the page alone.
+    let peak = 0;
+    const pcm = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i += 1) {
+      const v = Math.max(-1, Math.min(1, f[i]));
+      if (Math.abs(v) > peak) peak = Math.abs(v);
+      pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    }
+    const el = $('v_level');
+    if (el) el.textContent = peak.toFixed(3);
+    fetch('/_voice/audio', { method: 'POST', body: pcm.buffer }).catch(() => {});
+  };
+}
+
+function stopMicPump() {
+  micStream?.getTracks().forEach((t) => t.stop());
+  micStream = null;
+  micCtx?.close().catch(() => {});
+  micCtx = null;
+}
+
+async function setVoice(on) {
+  if (!on) {
+    if (shell?.voiceStop) shell.voiceStop();
+    else await fetch('/_voice/stop', { method: 'POST' }).catch(() => {});
+    voiceEvents?.close();
+    voiceEvents = null;
+    stopMicPump();
+    bridge.reset();
+    renderer.clearCaption();
+    voiceOn = false;
+    showVoice('voice off');
+    return;
+  }
+
+  showVoice('starting…');
+  if (shell?.voiceStart) {
+    const r = await shell.voiceStart();
+    voiceOn = Boolean(r?.ok);
+    if (!voiceOn) showVoice(`voice failed to start: ${r?.reason ?? 'unknown'}`);
+    return;
+  }
+
+  // Browser path. The page itself captures the microphone via getUserMedia — so the
+  // browser shows its own permission prompt and applies its own echo cancellation (which
+  // also keeps the pet's TTS out of its ears) — and streams 16 kHz PCM to the local
+  // server, which pipes it into the recogniser. The event stream is opened first so the
+  // sidecar's `ready` line is not missed in the gap.
+  try {
+    showVoice('requesting microphone permission…');
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+    });
+    voiceEvents = new EventSource('/_voice/events');
+    voiceEvents.addEventListener('message', (e) => {
+      try { onVoiceLine(JSON.parse(e.data)); } catch { /* malformed frame */ }
+    });
+    voiceEvents.addEventListener('error', () => {
+      showVoice('voice stream dropped — is npm run serve still up?');
+    });
+    const res = await fetch('/_voice/start', { method: 'POST' });
+    // Checked before parsing: a 404 here means the running server predates the voice routes,
+    // and parsing its error page as JSON reports a syntax error, which tells the user nothing
+    // about the real problem. This exact failure cost real debugging time, so it now names
+    // its own cause.
+    if (res.status === 404) {
+      throw new Error('this server has no /_voice routes — restart it (npm run serve)');
+    }
+    if (res.status === 403) {
+      throw new Error('voice is loopback-only; open the page on 127.0.0.1, not a LAN address');
+    }
+    if (!res.ok) throw new Error(`server said ${res.status}`);
+    const r = await res.json();
+    voiceOn = Boolean(r?.ok);
+    if (!voiceOn) {
+      showVoice(r?.reason === 'not-built'
+        ? 'voice sidecar not built — run native/build.sh'
+        : `voice failed to start: ${r?.reason ?? 'unknown'}`);
+      if ($('voiceOn')) $('voiceOn').checked = false;
+      return;
+    }
+    startMicPump();
+    showVoice('listening (mic is live — the meter below should move when you speak)');
+  } catch (e) {
+    voiceOn = false;
+    voiceEvents?.close();
+    voiceEvents = null;
+    showVoice(`voice unavailable: ${e.message}`);
+    if ($('voiceOn')) $('voiceOn').checked = false;
+  }
+}
+
+// ---- render loop is independent of the camera, so the pet is always alive ----
+function frame() {
+  const now = performance.now();
+  // A recognised voice command is re-submitted while its utterance lasts; that is how a
+  // one-shot channel satisfies the bus's dwell requirement. See voice-bridge.js.
+  const sustain = bridge.tick(now);
+  if (sustain) {
+    const verdict = bus.submit(sustain);
+    if (verdict.status === 'fired') {
+      bridge.settled(sustain.intent);
+      handleIntent(verdict.event, now);
+    } else if (verdict.status === 'withheld') {
+      showVoice(`${verdict.intent} held: ${verdict.reason}`);
+    }
+  }
+  runner.update(now);
+  if (petGoal) {
+    const dt = Math.min(66, now - (frame.lastT ?? now));
+    frame.lastT = now;
+    const step = loco.step({ pos: petPos, goal: petGoal, speed: 0.55, dt });
+    petPos.x = step.pos.x;
+    petPos.y = step.pos.y;
+    if (step.arrived) petGoal = null;
+    else if (step.action && !player.action) {
+      // The pack's own directional walk clip, when it has one; sliding otherwise.
+      const clip = player.resolve(step.action);
+      if (clip) player.playAction(clip, now, { queueIfBusy: false });
+    }
+  } else {
+    frame.lastT = now;
+  }
+  player.setState(core.state.sprite ?? 'away');
+  renderer.setPos(petPos);
+  const anim = player.sample(now);
+  renderer.draw(core.state, now, anim);
+  $('v_action').textContent = anim.action ?? '—';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function applyState(state) {
+  // A trigger is a summons, not a performance: the only thing that happens locally is
+  // that the model gets woken with the frame and the readings. Same-trigger frames must
+  // not re-summon, or one slouch costs thirty model calls a second.
+  if (state.trigger && state.trigger !== lastTrigger) {
+    lastTrigger = state.trigger;
+    if (brain.configured) askModel(state.trigger, { ...state });
+  }
+
+  $('v_sprite').textContent = state.sprite;
+  $('v_calib').textContent = state.calibrated ? 'done' : 'calibrating…';
+  $('v_calib').className = state.calibrated ? 'ok' : 'bad';
+  $('v_slump').textContent = state.slump.toFixed(3);
+  $('v_lean').textContent = (state.leanRatio ?? 1).toFixed(3);
+  $('v_att').textContent = state.attention ? 'yes' : 'no';
+  $('v_blink').textContent = state.blinkRate.toFixed(1);
+  $('v_yawn').textContent = state.yawnCount;
+  $('v_gest').textContent = state.gesture ?? '—';
+  $('v_shape').textContent = [state.handShape, state.waving ? 'waving' : null,
+    state.handNearFace ? 'near face' : null, state.handCount > 1 ? 'both hands' : null]
+    .filter(Boolean).join(' / ') || '—';
+  $('v_expr').textContent = state.expression ?? '—';
+  $('v_energy').textContent = state.energy.toFixed(1);
+  $('v_mood').textContent = state.mood.toFixed(3);
+  $('v_focus').textContent = (state.focusStreakMs / 1000).toFixed(1);
+  // Which rate class last spoke, and how usual that state was. Makes the per-channel
+  // pacing visible instead of something you have to take on faith.
+  if (state.channel) {
+    const pct = state.share == null ? '' : ` · ${Math.round(state.share * 100)}%`;
+    $('v_chan').textContent = `${state.channel}${pct}`;
+  }
+  $('v_infer').textContent = lastInferMs.toFixed(1);
+  $('v_fps').textContent = fps.toFixed(0);
+}
+
+// ---- fast loop: camera or video file + MediaPipe ----
+async function loadModels() {
+  setStatus('Loading MediaPipe…');
+  const vision = await import('./vendor/tasks-vision/vision_bundle.mjs');
+  const fileset = await vision.FilesetResolver.forVisionTasks('./vendor/tasks-vision/wasm');
+  faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: './models/face_landmarker.task', delegate: 'GPU' },
+    runningMode: 'VIDEO',
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: true,
+  });
+  gestureRecognizer = await vision.GestureRecognizer.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: './models/gesture_recognizer.task', delegate: 'GPU' },
+    runningMode: 'VIDEO',
+    // Two, so "both hands in frame" is a fact the pet can react to.
+    numHands: 2,
+  });
+  // The bundle owns the 478-point topology; taking the sets from it beats hardcoding.
+  const FL = vision.FaceLandmarker;
+  faceConnections = [
+    ...(FL.FACE_LANDMARKS_LIPS ?? []),
+    ...(FL.FACE_LANDMARKS_LEFT_EYE ?? []),
+    ...(FL.FACE_LANDMARKS_RIGHT_EYE ?? []),
+    ...(FL.FACE_LANDMARKS_LEFT_EYEBROW ?? []),
+    ...(FL.FACE_LANDMARKS_RIGHT_EYEBROW ?? []),
+    ...(FL.FACE_LANDMARKS_FACE_OVAL ?? []),
+  ];
+  window.__modelsReady = true;
+  setStatus('Models ready.');
+}
+
+async function startCamera() {
+  stopMock();
+  $('btnCam').disabled = true;
+  try {
+    if (!faceLandmarker) await loadModels();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }, audio: false,
+    });
+    const cam = $('cam');
+    cam.removeAttribute('src');
+    cam.loop = false;
+    cam.srcObject = stream;
+    await cam.play();
+    source = cam;
+    running = true;
+    setStatus('Running. Sit normally for a few seconds to calibrate.');
+    pump();
+  } catch (e) {
+    setStatus(`Camera failed to start: ${e.message}`);
+    $('btnCam').disabled = false;
+  }
+}
+
+// A video file is the same pipeline with a different source, which also makes the
+// real-face path reproducible — a recorded clip gives the same readings every run.
+async function startVideoFile(file) {
+  stopMock();
+  try {
+    if (!faceLandmarker) await loadModels();
+    const cam = $('cam');
+    if (cam.srcObject) {
+      for (const t of cam.srcObject.getTracks()) t.stop();
+      cam.srcObject = null;
+    }
+    core.reset();
+    cam.src = URL.createObjectURL(file);
+    cam.loop = true;
+    cam.muted = true;
+    await cam.play();
+    source = cam;
+    running = true;
+    $('showCam').checked = true;
+    cam.classList.remove('hidden');
+    setStatus(`Playing ${file.name}. The first few dozen frames calibrate the posture baseline.`);
+    pump();
+  } catch (e) {
+    setStatus(`Video failed to load: ${e.message}`);
+  }
+}
+
+let lastVideoTime = -1;
+function pump() {
+  if (!running || !source) return;
+  const now = performance.now();
+  if (source.readyState >= 2 && source.currentTime !== lastVideoTime) {
+    lastVideoTime = source.currentTime;
+    const t0 = performance.now();
+    let faceResult = null; let gestureResult = null;
+    try {
+      faceResult = faceLandmarker.detectForVideo(source, now);
+      gestureResult = gestureRecognizer.recognizeForVideo(source, now);
+    } catch (e) {
+      setStatus(`Inference error: ${e.message}`);
+    }
+    lastInferMs = performance.now() - t0;
+    const aspect = (source.videoWidth || 640) / (source.videoHeight || 480);
+    const features = featuresFromMediapipe({ faceResult, gestureResult, t: now, videoAspect: aspect });
+    // Named expressions and hand shapes are layered on top of the raw features. Both
+    // detectors are edge-based, so what reaches the core is a change, not a reading.
+    const faceLm = faceResult?.faceLandmarks?.[0] ?? null;
+    const expr = expressions.update(blendshapeLookup(faceResult?.faceBlendshapes?.[0]?.categories));
+    const hands = readHands({ gestureResult, faceLandmarks: faceLm, t: now, wave: waves, swipe: swipes });
+    if (hands.swipe) {
+      // A swipe is a command, so it goes through the bus like any other intent — free
+      // tier, fires immediately, model not consulted.
+      const verdict = bus.submit({ source: 'gesture', intent: `move_${hands.swipe}`, confidence: 0.85, t: now });
+      if (verdict.status === 'fired') handleIntent(verdict.event, now);
+    }
+    lastFrameHands = gestureResult?.landmarks ?? [];
+    lastFrameFace = faceLm;
+    Object.assign(features, {
+      expression: expr.name,
+      handShape: hands.shape,
+      handCount: hands.handCount,
+      fingers: hands.fingers,
+      fingersUp: hands.fingersUp,
+      waving: hands.waving,
+      handNearFace: hands.nearFace,
+    });
+    applyState(core.updateFast(features));
+
+    fpsCount += 1;
+    if (now - fpsLast >= 1000) { fps = (fpsCount * 1000) / (now - fpsLast); fpsCount = 0; fpsLast = now; }
+  }
+  requestAnimationFrame(pump);
+}
+
+// ---- slow loop: one frame + the fast loop's readings -> one line + one action ----
+const vlmCfg = { url: '', model: '', key: '', on: false, quota: 100 };
+// config.local.json holds the machine's own defaults — endpoint, model, key — so the pet
+// works on launch without anyone retyping them. It is gitignored on purpose: the key
+// does not belong in index.html, which is the file that ends up in screenshots and
+// gets shared. Absent file is normal; everything then comes from the panel.
+async function loadLocalConfig() {
+  try {
+    const res = await fetch('./config.local.json', { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+const localCfg = await loadLocalConfig();
+if (localCfg) {
+  const map = { url: 'endpoint', model: 'model', key: 'apiKey', quota: 'dailyQuota', provider: 'provider' };
+  for (const [short, long] of Object.entries(map)) {
+    if (localCfg[long] != null && localCfg[long] !== '') vlmCfg[short] = localCfg[long];
+  }
+  if (localCfg.slowLoopOn != null) vlmCfg.on = Boolean(localCfg.slowLoopOn);
+}
+
+// localStorage wins over the file: a value edited in the panel has to survive a reload.
+// Exception — the daily quota takes the LARGER of the two. It is runaway protection, not a
+// preference: an old preset once wrote 500 into localStorage and silently capped a
+// self-hosted gateway whose config file said otherwise, and the pet went mute mid-day.
+for (const k of ['url', 'model', 'key', 'quota', 'provider']) {
+  const saved = localStorage.getItem(`vlm.${k}`);
+  if (!saved) continue;
+  if (k === 'quota') vlmCfg.quota = Math.max(Number(saved) || 0, Number(vlmCfg.quota) || 0);
+  else vlmCfg[k] = saved;
+}
+$('vlmUrl').value = vlmCfg.url;
+$('vlmModel').value = vlmCfg.model;
+$('vlmKey').value = vlmCfg.key;
+$('quotaLimit').value = vlmCfg.quota;
+$('vlmProvider').value = vlmCfg.provider || 'openai';
+
+function pushBrainCfg() {
+  brain.configure({
+    provider: vlmCfg.provider || 'openai',
+    endpoint: vlmCfg.url,
+    model: vlmCfg.model || 'gpt-4o-mini',
+    apiKey: vlmCfg.key,
+    dailyQuota: Number(vlmCfg.quota) || 100,
+  });
+  const s = brain.status();
+  $('v_quota').textContent = `${s.remaining} / ${s.quota}`;
+}
+pushBrainCfg();
+
+for (const [id, k] of [['vlmUrl', 'url'], ['vlmModel', 'model'], ['vlmKey', 'key'], ['quotaLimit', 'quota'], ['vlmProvider', 'provider']]) {
+  $(id).addEventListener('change', () => {
+    vlmCfg[k] = $(id).value.trim();
+    localStorage.setItem(`vlm.${k}`, vlmCfg[k]);
+    pushBrainCfg();
+  });
+}
+$('btnPreset').addEventListener('click', () => {
+  // GPT_API_free's relay. Free tier is personal / education / research use only, and
+  // frames leave the machine once this is on.
+  $('vlmUrl').value = 'https://api.chatanywhere.tech/v1/chat/completions';
+  $('vlmModel').value = 'gpt-4o-mini';
+  for (const id of ['vlmUrl', 'vlmModel']) $(id).dispatchEvent(new Event('change'));
+  setStatus('Filled in the GPT_API_free endpoint. Get a key from that repo — 100 calls a day.');
+});
+
+$('btnPresetSub2api').addEventListener('click', () => {
+  // The local gateway speaks both protocols; the anthropic one is picked because it
+  // can enforce the reply schema, which the OpenAI-compatible path cannot.
+  $('vlmUrl').value = 'http://127.0.0.1:8080/v1/messages';
+  $('vlmModel').value = 'claude-haiku-4-5';
+  $('vlmProvider').value = 'anthropic';
+  $('quotaLimit').value = '9999999';
+  for (const id of ['vlmUrl', 'vlmModel', 'vlmProvider', 'quotaLimit']) $(id).dispatchEvent(new Event('change'));
+  setStatus('Filled in the local sub2api gateway. Generate a key in its admin UI, and bind the upstream account there too.');
+});
+
+// The frame sent to the model carries the detections drawn on top: hand skeleton, face
+// contours, and the two posture rules. The model then reads the same measurements the
+// pet is reacting to instead of re-deriving them from pixels — and `lastMarks` states
+// the legend in words so the picture and the prompt cannot disagree.
+function grabJpeg(video, maxW = 512) {
+  const w = video.videoWidth || 640; const h = video.videoHeight || 480;
+  const scale = Math.min(1, maxW / w);
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+  const ctx = c.getContext('2d');
+  // Mirrored to match the preview, so "his left hand" means the same in both.
+  ctx.save();
+  ctx.translate(c.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, c.width, c.height);
+  ctx.restore();
+  if ($('markFrame').checked) {
+    const st = core.state;
+    lastMarks = annotateFrame(ctx, {
+      width: c.width,
+      height: c.height,
+      hands: lastFrameHands,
+      faceLandmarks: lastFrameFace,
+      faceConnections,
+      baselineY: core.baseline?.centerY ?? null,
+      currentY: core.centerY?.value ?? null,
+      labels: [
+        `slump ${st.slump.toFixed(2)}`,
+        st.expression ? `expression ${st.expression}` : null,
+        st.handShape ? `hand ${st.handShape}` : null,
+      ].filter(Boolean),
+    });
+  } else {
+    lastMarks = [];
+  }
+  return c.toDataURL('image/jpeg', 0.72);
+}
+
+// A fast-loop trigger asks the model for this moment's line. Deliberately not gated by
+// shouldTriggerSlow(): that gate paces the idle "nothing happened" polling, whereas a
+// trigger is exactly when there is something worth saying. Frequency is already bounded
+// by pet-core's triggerCooldownMs, and Brain refuses overlapping calls.
+async function askModel(trigger, state, attempt = 0) {
+  const t0 = performance.now();
+  // No frame in mock mode. The readings alone are enough for the model to answer, and
+  // requiring a frame meant the mock script — the thing used to demo and to test
+  // without a camera — never exercised the model path at all.
+  const out = await brain.think({
+    state,
+    imageDataUrl: source ? grabJpeg(source) : null,
+    vocabulary: actionVocabulary(player.pack),
+    persona: player.pack.persona,
+    policy: core.opt.policy,
+    trigger,
+    // From the novelty gate: whether this is genuinely new for them or just how they
+    // always sit. Lets the model pitch the remark instead of nagging identically.
+    habit: state?.habit ?? null,
+    // Consumed once: leaving it set would make every later trigger look like a reply to
+    // something the user said minutes ago.
+    heard: pendingHeard,
+    marks: lastMarks,
+  });
+  pendingHeard = null;
+  const st = brain.status();
+  $('v_quota').textContent = `${st.remaining} / ${st.quota}`;
+  const now = performance.now();
+  if (out?.busy) {
+    // Lost the single-flight race. Losing that race must not eat what the user said —
+    // retry as the other call drains. Everything else (posture, expression) is cheap to
+    // drop: the state will still be true in a minute; a sentence will not.
+    if (trigger === 'said' && attempt < 4) {
+      setTimeout(() => askModel(trigger, state, attempt + 1), 700);
+    }
+    return;
+  }
+  if (!out) {
+    // The puppet has exactly one author now, so a model failure means no performance —
+    // reported, not papered over with a canned line that pretends the model spoke.
+    if (st.lastError && st.lastError !== 'inflight') {
+      $('v_sem').textContent = `[${trigger}] model failed, pet stays quiet: ${st.lastError}`;
+    }
+    return;
+  }
+  if (out.line) core.ingestSemantic(out.line, now);
+  playScript(out, trigger, now);
+  $('v_sem').textContent += ` · ${Math.round(now - t0)}ms`;
+}
+
+// The periodic idle poll is gone: the pet speaks when something happened or when spoken
+// to, never because a timer went off. (Removed at the user's request — the timer voice was
+// noise, and the novelty gate already paces event-driven speech.)
+
+$('btnVlmTest').addEventListener('click', async () => {
+  if (!source) { $('v_sem').textContent = 'Start the camera or load a video first.'; return; }
+  await askModel('periodic', { ...core.state });
+});
+
+// ---- mock: a scripted sequence so the whole loop is verifiable with no camera ----
+const MOCK = [
+  // Paced against the production gates on purpose: every gap that must clear the 2 s global
+  // floor does so with margin, and the away segment exceeds returnAfterMs rather than
+  // sitting 500 ms under it. The old pacing was written for the flat-cooldown era and passed
+  // or failed on timing luck. Note "sit up → good" no longer speaks: the posture channel
+  // holds a minutes-long cooldown, and a demo that pretended otherwise would be lying about
+  // the product.
+  { ms: 1200, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.30 }, note: 'calibrating: normal posture' },
+  { ms: 1500, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.30, smile: 0.6 }, note: 'smile → happy' },
+  { ms: 2600, f: { facePresent: true, faceCenterY: 0.60, faceSize: 0.30 }, note: 'slouch → annoyed' },
+  { ms: 1500, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.30 }, note: 'sit up (quietly noted)' },
+  { ms: 1500, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.38 }, note: 'lean in → curious' },
+  { ms: 1400, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.30, gesture: 'Thumb_Up' }, note: 'thumbs-up gesture' },
+  { ms: 1400, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.30 }, note: 'settling' },
+  { ms: 2200, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.30, jawOpen: 0.8 }, note: 'yawn → sleepy' },
+  { ms: 4200, f: { facePresent: false }, note: 'leave → away' },
+  { ms: 2500, f: { facePresent: true, faceCenterY: 0.42, faceSize: 0.30 }, note: 'come back → return' },
+];
+
+function stopMock() {
+  if (mockTimer) { clearInterval(mockTimer); mockTimer = null; }
+  $('btnMock').textContent = 'Run mock script';
+}
+
+function startMock() {
+  running = false;
+  core.reset();
+  lastTrigger = null;
+  const step = 33;
+  let t = 0; let seg = 0; let segT = 0;
+  $('btnMock').textContent = 'Stop mock';
+  setStatus('Mock mode: driven by scripted signals, no camera needed.');
+  mockTimer = setInterval(() => {
+    if (seg >= MOCK.length) { stopMock(); setStatus('Mock script finished. You can export the CSVs.'); return; }
+    const cur = MOCK[seg];
+    t += step; segT += step;
+    applyState(core.updateFast(makeFeatures({ t, ...cur.f })));
+    $('v_sem').textContent = `[mock] ${cur.note}`;
+    if (segT >= cur.ms) { seg += 1; segT = 0; }
+  }, step);
+}
+
+function download(name, text, mime = 'text/csv;charset=utf-8') {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ---- wiring ----
+$('btnMock').addEventListener('click', () => (mockTimer ? stopMock() : startMock()));
+$('btnCam').addEventListener('click', startCamera);
+$('videoFile').addEventListener('change', (e) => {
+  const f = e.target.files?.[0];
+  if (f) startVideoFile(f);
+});
+$('voiceOn')?.addEventListener('change', (e) => setVoice(e.target.checked));
+
+$('btnRecal').addEventListener('click', () => { core.reset(); lastTrigger = null; setStatus('Reset — recalibrating.'); });
+$('slumpSens').addEventListener('input', () => {
+  const v = Number($('slumpSens').value);
+  // Exit at half of entry: wide enough that boundary jitter cannot flip slump <-> good.
+  core.opt.slumpEnter = v;
+  core.opt.slumpExit = v / 2;
+  $('slumpOut').textContent = v.toFixed(2);
+  localStorage.setItem('deskpet.slumpEnter', String(v));
+});
+{
+  const saved = Number(localStorage.getItem('deskpet.slumpEnter'));
+  if (Number.isFinite(saved) && saved > 0) {
+    $('slumpSens').value = String(saved);
+    $('slumpSens').dispatchEvent(new Event('input'));
+  }
+}
+
+// The old "where lines come from" selector is gone with the phrase tables: the puppet has
+// exactly one author now. Without a configured model the pet still tracks you, still shows
+// presence, still answers OS commands — it just has nothing to say, and the panel says so.
+if (!brain.configured) {
+  setStatus('No model endpoint configured — the pet watches but cannot speak or emote.');
+}
+$('showCam').addEventListener('change', () => $('cam').classList.toggle('hidden', !$('showCam').checked));
+$('charSelect').addEventListener('change', () => setCharacter($('charSelect').value, { remember: true }));
+$('btnCharNext').addEventListener('click', () => {
+  const i = packs.findIndex((p) => p.id === player.pack.id);
+  setCharacter(packs[(i + 1) % packs.length].id, { remember: true });
+});
+$('btnActionTry').addEventListener('click', () => {
+  const name = $('actionTry').value;
+  const resolved = player.resolve(name);
+  if (resolved) player.playAction(resolved, performance.now(), { queueIfBusy: false });
+});
+$('btnSpeakTest').addEventListener('click', () => {
+  const v = player.pack.voice;
+  const ok = voice.say(`I'm ${player.pack.name}, and I'm watching you.`, {
+    lang: v.lang, voiceHint: v.voiceHint, rate: v.rate, pitch: v.pitch,
+  });
+  setStatus(ok ? `Speaking with the ${v.voiceHint} voice.` : 'No speech synthesis here, or the browser blocked it.');
+});
+$('policy').addEventListener('change', () => {
+  core.setPolicy($('policy').value);
+  setStatus(`Feedback style set to ${$('policy').value}. The switch is recorded in the CSV.`);
+});
+$('delay').addEventListener('input', () => {
+  const v = Number($('delay').value);
+  core.opt.reactionDelayMs = v;
+  $('delayOut').textContent = v;
+});
+$('btnCsv').addEventListener('click', () => download(`deskpet-log-${Date.now()}.csv`, core.toCsv()));
+$('btnActionsCsv').addEventListener('click', () => {
+  const rows = ['t,from,action,line', ...feedbackLog.map((r) => {
+    const line = `"${String(r.line).replace(/"/g, '""')}"`;
+    return `${r.t},${r.from},${r.action},${line}`;
+  })];
+  download(`deskpet-feedback-${Date.now()}.csv`, `${rows.join('\n')}\n`);
+});
+
+// ---- Electron shell ----
+if (shell) {
+  const setPanel = (open) => {
+    document.body.classList.toggle('panel-open', open);
+    if (open) voice.stop();
+  };
+  shell.onPanel(setPanel);
+  shell.onNextCharacter(() => $('btnCharNext').click());
+  shell.onRecalibrate(() => $('btnRecal').click());
+  $('btnPanel').addEventListener('click', () => shell.setPanel(true));
+  $('btnQuit').addEventListener('click', () => shell.quit());
+
+  // Click-through: the window is mostly empty pixels, so main ignores the mouse until
+  // the cursor is actually over a drawn part of the pet. Sampling the canvas alpha is
+  // exact — a bounding box would swallow clicks in the corners.
+  let over = false;
+  const canvas = $('pet');
+  window.addEventListener('mousemove', (e) => {
+    if (document.body.classList.contains('panel-open')) return;
+    const r = canvas.getBoundingClientRect();
+    let hit = false;
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      const dpr = window.devicePixelRatio || 1;
+      const x = Math.floor((e.clientX - r.left) * dpr);
+      const y = Math.floor((e.clientY - r.top) * dpr);
+      try {
+        hit = canvas.getContext('2d').getImageData(x, y, 1, 1).data[3] > 24;
+      } catch { hit = true; }
+    }
+    // The hover buttons sit outside the pet's silhouette, so treat them as solid too.
+    if (!hit && e.target.closest?.('#petBtns')) hit = true;
+    if (hit !== over) { over = hit; shell.hover(hit); }
+  });
+}
+
+refreshCharUI();
+loadExternalPacks();
+
+// Hooks for the automated end-to-end check.
+window.__pet = {
+  core, renderer, player, brain, voice, packs: () => packs,
+  startMock, stopMock, loadModels, applyState, makeFeatures, setCharacter,
+  feedbackLog: () => feedbackLog,
+  // Voice internals are exposed so the integration can be driven with synthetic sidecar
+  // lines. Waiting on the real sidecar would put a 9 s model warm-up and a live microphone
+  // inside a test, which is exactly the acoustic flakiness the file-mode path exists to
+  // avoid — and the wiring under test here is the JS side, not the recogniser.
+  voiceLine: onVoiceLine, bridge, bus, setVoice, handleIntent,
+  heard: () => pendingHeard,
+};
+</script>
+</body>
+</html>

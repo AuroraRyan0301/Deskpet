@@ -1,0 +1,10 @@
+{
+  "_comment": "复制成 config.local.json 并填上自己的值；该文件不会被提交。",
+  "provider": "anthropic",
+  "endpoint": "http://127.0.0.1:8080/v1/messages",
+  "model": "claude-haiku-4-5",
+  "apiKey": "",
+  "dailyQuota": 5000,
+  "slowLoopOn": true,
+  "lineSource": "modelOnly"
+}

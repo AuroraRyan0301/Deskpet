@@ -1,0 +1,17 @@
+{
+  "name": "deskpet",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pet": "node tools/run-electron.mjs",
+    "serve": "node serve.mjs",
+    "test": "node --test test/*.test.mjs",
+    "e2e": "node test/e2e.mjs",
+    "e2e:electron": "node test/electron.mjs",
+    "import": "node tools/import-gremlin.mjs"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0"
+  },
+  "main": "electron/main.mjs"
+}
