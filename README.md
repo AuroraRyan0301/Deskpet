@@ -3,8 +3,8 @@
 ![teaser](docs/teaser.png)
 
 A desk pet that lives on your screen, watches you through the webcam, listens through the
-microphone, and answers in character. Built for the University of Tokyo *Mixed Reality
-Systems* course in the spirit of 技術の無駄遣い — technology faithful to one's own desires.
+microphone, and answers in character. A personal project, built because I wanted it to
+exist — technology faithful to one's own desires.
 
 The default character is Agnes Tachyon (Umamusume). She treats you as her favourite test
 subject: your posture, blink rate and fatigue are her experimental data.

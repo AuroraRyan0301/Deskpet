@@ -27,7 +27,7 @@ Every latency claim below traces to `tools/asr-latency/` (voice) or the existing
 | model round trip (Haiku via local gateway) | ~1 – 3 s |
 
 The load-bearing discovery: **voice partials are as fast as gestures.** Both land inside
-the ≈60 ms visuo-tactile simultaneity window from the 04/30 lecture, which means a spoken
+the ≈60 ms visuo-tactile simultaneity window reported in the haptics literature, which means a spoken
 command and a hand command can be treated as *simultaneous evidence about one intent*
 rather than two events to be sequenced. That is what makes fusion honest rather than
 decorative.

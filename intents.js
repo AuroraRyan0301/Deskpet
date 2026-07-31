@@ -340,7 +340,7 @@ export const REQUIRED_ARGS = {
 // second ago is worse than refusing and saying why.
 export const POINTER_TTL_MS = 600;
 
-// The ≈60 ms visuo-tactile simultaneity window from the 04/30 lecture is the principled
+// The ≈60 ms visuo-tactile simultaneity window from the psychophysics literature is the principled
 // floor: inside it, two signals are one perceptual event, so a spoken command and a hand
 // command are evidence about one intent rather than two things to sequence.
 //

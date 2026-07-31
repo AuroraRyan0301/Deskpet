@@ -7,7 +7,7 @@ export const POLICIES = ['flatter', 'honest', 'ignore'];
 
 export const DEFAULTS = {
   policy: 'honest',
-  // Visible reaction is held back by this much. 0430 (MR and Haptics): the
+  // Visible reaction is held back by this much. From the haptics literature: the
   // visuo-tactile simultaneity window is ~60 ms and perceived conflict peaks at
   // 30-120 ms of delay, so 0 is not automatically the best setting — it is a knob
   // the evaluation is supposed to sweep.

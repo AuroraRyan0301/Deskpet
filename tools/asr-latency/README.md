@@ -28,7 +28,7 @@ swiftc -O -parse-as-library -target arm64-apple-macos26.0 measure.swift -o measu
 Three things follow, and the whole voice design rests on them:
 
 1. **Partials are fast enough to be a reflex.** 39 ms median is inside the ≈60 ms
-   visuo-tactile simultaneity window from the 04/30 lecture, so a voice command and a
+   visuo-tactile simultaneity window from the haptics literature, so a voice command and a
    gesture command land in the same perceptual instant and can be fused without feeling
    out of step.
 2. **Finals are far too slow for commands** but exactly right for conversation, which is
