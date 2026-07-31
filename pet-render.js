@@ -190,8 +190,8 @@ export class PetRenderer {
       ctx.drawImage(sheetImg, sp.sx, sp.sy, sp.cell.w, sp.cell.h, -w / 2, -h / 2, w, h);
       ctx.restore();
       ctx.globalAlpha = 1;
-      this.drawSpeech(state, now, cssW, cssH, cy - r * 1.35);
-      this.drawCaption(now, cssW, cssH, py + r * 1.3);
+      this.drawSpeech(state, now, cssW, cssH, cy - r * 1.35, px);
+      this.drawCaption(now, cssW, cssH, py + r * 1.3, px);
       return;
     }
 
@@ -354,16 +354,16 @@ export class PetRenderer {
 
     ctx.restore();
     ctx.globalAlpha = 1;
-    this.drawSpeech(state, now, cssW, cssH, cy - r * 1.35);
+    this.drawSpeech(state, now, cssW, cssH, cy - r * 1.35, px);
     // Anchored to the shadow's row rather than to the bobbing body, so the subtitle does not
     // bounce along with the character while it breathes.
-    this.drawCaption(now, cssW, cssH, py + r * 1.3);
+    this.drawCaption(now, cssW, cssH, py + r * 1.3, px);
   }
 
   // Subtitle styling follows video captions rather than the pet's speech bubble: dark plate,
   // light text, bottom-anchored. A viewer should be able to tell at a glance which of the two
   // is the pet talking and which is themselves.
-  drawCaption(now, cssW, cssH, y) {
+  drawCaption(now, cssW, cssH, y, px = cssW / 2) {
     if (!this.caption) return;
     if (now >= this.captionUntil) { this.clearCaption(); return; }
     const { ctx } = this;
@@ -389,7 +389,7 @@ export class PetRenderer {
     shown[0] = label + shown[0];
     const w = Math.min(maxW, Math.max(...shown.map((l) => ctx.measureText(l).width)) + padX * 2);
     const h = shown.length * lineH + padY * 2;
-    const x = (cssW - w) / 2;
+    const x = Math.min(cssW - w - 6, Math.max(6, px - w / 2));
     const top = Math.min(cssH - h - 4, y);
     const rr = 8;
     ctx.beginPath();
@@ -418,9 +418,9 @@ export class PetRenderer {
     ctx.globalAlpha = 1;
   }
 
-  drawSpeech(state, now, cssW, cssH, y) {
+  drawSpeech(state, now, cssW, cssH, y, px) {
     if (this.shownLine && now < this.lineUntil) {
-      this.drawBubble(this.shownLine, cssW, cssH, y);
+      this.drawBubble(this.shownLine, cssW, cssH, y, px);
     } else if (now >= this.lineUntil) {
       this.shownLine = null;
     }
@@ -428,7 +428,7 @@ export class PetRenderer {
 
   // Wraps, because a model-written line is not length-controlled the way the mock
   // script's canned lines were.
-  drawBubble(text, cssW, cssH, y) {
+  drawBubble(text, cssW, cssH, y, px = cssW / 2) {
     const { ctx } = this;
     ctx.font = '15px system-ui, -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
@@ -439,7 +439,9 @@ export class PetRenderer {
     const lineH = 20;
     const w = Math.min(maxW, Math.max(...lines.map((l) => ctx.measureText(l).width)) + padX * 2);
     const h = lines.length * lineH + padY * 2;
-    const x = (cssW - w) / 2;
+    // Centered over the character, not the page: the stage spans the whole viewport now,
+    // and a bubble at page centre while she stands at the edge reads as someone else talking.
+    const x = Math.min(cssW - w - 6, Math.max(6, px - w / 2));
     const top = Math.max(6, y - h);
     const rr = 10;
     ctx.beginPath();
